@@ -19,7 +19,7 @@ const CONFIG = {
 };
 
 /* 시트 컬럼 규격 (1행은 헤더, 2행부터 데이터 — 헤더 행이 꼭 있어야 합니다!)
-   [스케줄 탭]  A:date(YYYY-MM-DD)  B:title  C:tag(yellow/blue/red/green/gray)
+   [스케줄 탭]  A:date(YYYY-MM-DD)  B:title  C:tag(yellow/blue/red/green/gray 또는 #ffaa00 같은 컬러 코드)
    [게임 탭]    A:title  B:rating(1~5)  C:note  D:tag(옵션)
    [메모 탭]    A: 첫 행은 아무 헤더(예: item), 2행부터 한 줄에 할일 하나씩
 */
@@ -96,6 +96,41 @@ document.querySelectorAll(".close-toast").forEach(btn=>{
 let viewYear, viewMonth; // 0-indexed month
 let scheduleByDate = {}; // "YYYY-MM-DD" -> [{title,tag}]
 
+/* 태그 컬러: 시트에 yellow/blue/red/green/gray 같은 이름 대신
+   #ffaa00 같은 컬러 코드(hex)를 적어도 그 색 그대로 적용됨 */
+function normalizeHex(v){
+  if (!v) return null;
+  let s = String(v).trim();
+  if (/^#?[0-9a-fA-F]{3}$/.test(s) || /^#?[0-9a-fA-F]{6}$/.test(s)){
+    if (!s.startsWith("#")) s = "#" + s;
+    return s;
+  }
+  return null;
+}
+function hexToRgb(hex){
+  let h = hex.replace("#","");
+  if (h.length === 3) h = h.split("").map(c=>c+c).join("");
+  const num = parseInt(h,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+function contrastText(hex){
+  const { r,g,b } = hexToRgb(hex);
+  const yiq = (r*299 + g*587 + b*114) / 1000;
+  return yiq >= 150 ? "#1a1a1a" : "#ffffff";
+}
+function applyTagColor(el, tagValue){
+  const hex = normalizeHex(tagValue);
+  if (hex){
+    el.className = "cal-tag";
+    el.style.background = hex;
+    el.style.borderColor = "rgba(0,0,0,.45)";
+    el.style.color = contrastText(hex);
+  } else {
+    el.className = "cal-tag tag-" + (tagValue || "gray").toLowerCase();
+    el.style.background = ""; el.style.borderColor = ""; el.style.color = "";
+  }
+}
+
 function ymd(y,m,d){
   return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 }
@@ -126,7 +161,7 @@ function renderCalendar(){
     const entries = scheduleByDate[key] || [];
     entries.forEach(e=>{
       const tag = document.createElement("div");
-      tag.className = "cal-tag tag-" + (e.tag || "gray");
+      applyTagColor(tag, e.tag);
       tag.textContent = e.title;
       cell.appendChild(tag);
     });
@@ -150,9 +185,21 @@ document.getElementById("next-month").onclick = () => {
   renderCalendar();
 };
 
+/* ---------------- loading cursor (모래시계) ---------------- */
+let pendingLoads = 0;
+function beginLoad(){
+  pendingLoads++;
+  document.body.classList.add("wait-cursor");
+}
+function endLoad(){
+  pendingLoads = Math.max(0, pendingLoads - 1);
+  if (pendingLoads === 0) document.body.classList.remove("wait-cursor");
+}
+
 /* ---------------- data loading ---------------- */
 async function loadSchedule(){
   const status = document.getElementById("status-pill");
+  beginLoad();
   try {
     const rows = await fetchSheet(CONFIG.SCHEDULE_SHEET);
     scheduleByDate = {};
@@ -161,18 +208,21 @@ async function loadSchedule(){
       if (!date || !title) return;
       const key = date.trim();
       if (!scheduleByDate[key]) scheduleByDate[key] = [];
-      scheduleByDate[key].push({ title: title.trim(), tag: (tag||"gray").trim().toLowerCase() });
+      scheduleByDate[key].push({ title: title.trim(), tag: (tag||"gray").trim() });
     });
     status.textContent = "STATUS: LIVE_SOON";
     renderCalendar();
   } catch(err){
     status.textContent = "STATUS: LOAD_ERROR";
     console.error(err);
+  } finally {
+    endLoad();
   }
 }
 
 async function loadTodo(){
   const body = document.getElementById("todo-body");
+  beginLoad();
   try {
     const rows = await fetchSheet(CONFIG.TODO_SHEET);
     const items = rows.map(r => r[0]).filter(Boolean);
@@ -182,6 +232,8 @@ async function loadTodo(){
   } catch(err){
     body.textContent = "메모를 불러오지 못했습니다.";
     console.error(err);
+  } finally {
+    endLoad();
   }
 }
 
@@ -195,6 +247,7 @@ const THUMB_DOWN_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="no
 async function loadGames(){
   const grid = document.getElementById("game-grid");
   const count = document.getElementById("game-count");
+  beginLoad();
   try {
     const rows = await fetchSheet(CONFIG.GAMES_SHEET);
     grid.innerHTML = "";
@@ -224,6 +277,8 @@ async function loadGames(){
   } catch(err){
     grid.innerHTML = "불러오지 못했습니다.";
     console.error(err);
+  } finally {
+    endLoad();
   }
 }
 
