@@ -4,13 +4,13 @@
    아래 URL로 실시간 CSV를 읽어옵니다 (Publish to web 불필요).
 
    1) 시트 주소창의 .../d/  와  /edit 사이 긴 문자열이 SHEET_ID
-   2) 각 탭(시트)을 열었을 때 주소 끝의 #gid=숫자 가 그 탭의 GID
+   2) 탭 이름을 그대로 씁니다 (하단 탭에 표시된 이름과 정확히 일치해야 함)
    ============================================================ */
 const CONFIG = {
   SHEET_ID: "145ANufllVVP-m2ffsZcjQRLIndPQ6PCs3d_aIfzzH2k",
-  SCHEDULE_GID: "0",     // 일정표 탭의 gid
-  GAMES_GID: "0",        // 게임 아카이브 탭의 gid (탭 새로 만들고 여기에 gid 입력)
-  TODO_GID: "0",         // 할일 메모 탭의 gid (없으면 SCHEDULE_GID와 같아도 됨)
+  SCHEDULE_SHEET: "일정",       // 일정표 탭 이름
+  GAMES_SHEET: "게임아카이브",   // 게임 아카이브 탭 이름
+  TODO_SHEET: "메모",           // 할일 메모 탭 이름
 
   // 우측 상단 "System Error" 팝업 문구 — 자유롭게 수정하세요
   ERROR_TITLE: "System Error",
@@ -18,14 +18,14 @@ const CONFIG = {
   ERROR_OK_TEXT: "확인",
 };
 
-/* 시트 컬럼 규격 (1행은 헤더, 2행부터 데이터)
+/* 시트 컬럼 규격 (1행은 헤더, 2행부터 데이터 — 헤더 행이 꼭 있어야 합니다!)
    [스케줄 탭]  A:date(YYYY-MM-DD)  B:title  C:tag(yellow/blue/red/green/gray)
-   [게임 탭]    A:title  B:rating(1~5)  C:note  D:color(옵션, thumb 배경)
-   [메모 탭]    A: 한 줄에 할일 하나씩 (헤더 제외 전부 읽음)
+   [게임 탭]    A:title  B:rating(1~5)  C:note  D:tag(옵션)
+   [메모 탭]    A: 첫 행은 아무 헤더(예: item), 2행부터 한 줄에 할일 하나씩
 */
 
-function csvUrl(gid){
-  return `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+function csvUrl(sheetName){
+  return `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
 }
 
 // 아주 단순한 CSV 파서 (따옴표로 감싼 콤마/줄바꿈까지 처리)
@@ -51,8 +51,8 @@ function parseCSV(text){
   return rows.filter(r => r.some(x => x.trim() !== ""));
 }
 
-async function fetchSheet(gid){
-  const res = await fetch(csvUrl(gid), { cache: "no-store" });
+async function fetchSheet(sheetName){
+  const res = await fetch(csvUrl(sheetName), { cache: "no-store" });
   if (!res.ok) throw new Error("sheet fetch failed: " + res.status);
   const text = await res.text();
   const rows = parseCSV(text);
@@ -154,7 +154,7 @@ document.getElementById("next-month").onclick = () => {
 async function loadSchedule(){
   const status = document.getElementById("status-pill");
   try {
-    const rows = await fetchSheet(CONFIG.SCHEDULE_GID);
+    const rows = await fetchSheet(CONFIG.SCHEDULE_SHEET);
     scheduleByDate = {};
     rows.forEach(r => {
       const [date, title, tag] = r;
@@ -174,7 +174,7 @@ async function loadSchedule(){
 async function loadTodo(){
   const body = document.getElementById("todo-body");
   try {
-    const rows = await fetchSheet(CONFIG.TODO_GID);
+    const rows = await fetchSheet(CONFIG.TODO_SHEET);
     const items = rows.map(r => r[0]).filter(Boolean);
     body.textContent = items.length
       ? items.map(i => "> " + i).join("\n")
@@ -196,7 +196,7 @@ async function loadGames(){
   const grid = document.getElementById("game-grid");
   const count = document.getElementById("game-count");
   try {
-    const rows = await fetchSheet(CONFIG.GAMES_GID);
+    const rows = await fetchSheet(CONFIG.GAMES_SHEET);
     grid.innerHTML = "";
     rows.forEach(r=>{
       const [title, ratingRaw, note, tag] = r;
