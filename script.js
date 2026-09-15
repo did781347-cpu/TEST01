@@ -503,10 +503,67 @@ function applyErrorToastText(){
   if (o) o.textContent = CONFIG.ERROR_OK_TEXT;
 }
 
+/* ---------------- retro boot screen ---------------- */
+const BOOT_LINES = [
+  "404 SYSTEM BIOS v4.04",
+  "Copyright (C) 덩기덕 404",
+  "",
+  "CPU: 404-DUCK Processor",
+  "Detecting IDE drives... OK",
+  "Memory Test: 640K OK",
+  "",
+  "Loading 404_SCHEDULER.EXE...",
+  "Loading GAME_ARCHIVE.EXE...",
+  "Initializing desktop..."
+];
+
+function runBootSequence(){
+  const screen = document.getElementById("boot-screen");
+  const linesEl = document.getElementById("boot-lines");
+  const fill = document.getElementById("boot-bar-fill");
+  if (!screen || !linesEl){ return; }
+
+  let i = 0;
+  let finished = false;
+
+  function finish(){
+    if (finished) return;
+    finished = true;
+    screen.classList.add("hide");
+    setTimeout(() => { if (screen.parentNode) screen.remove(); }, 500);
+    document.removeEventListener("keydown", finish);
+    document.removeEventListener("touchstart", finish);
+    screen.removeEventListener("click", finish);
+  }
+
+  function showNext(){
+    if (i >= BOOT_LINES.length){
+      if (fill) fill.style.width = "100%";
+      setTimeout(finish, 300);
+      return;
+    }
+    const text = BOOT_LINES[i];
+    const div = document.createElement("div");
+    div.className = "boot-line" + (text === "" ? " blank" : "");
+    div.textContent = text;
+    linesEl.appendChild(div);
+    i++;
+    if (fill) fill.style.width = Math.round((i / BOOT_LINES.length) * 100) + "%";
+    setTimeout(showNext, text === "" ? 60 : 150 + Math.random() * 110);
+  }
+  showNext();
+
+  document.addEventListener("keydown", finish);
+  document.addEventListener("touchstart", finish, { passive:true });
+  screen.addEventListener("click", finish);
+  setTimeout(finish, 4500); // safety timeout
+}
+
 (function init(){
   const now = new Date();
   viewYear = now.getFullYear();
   viewMonth = now.getMonth();
+  runBootSequence();
   applyErrorToastText();
   setupDragAndResize();
   renderCalendar();
