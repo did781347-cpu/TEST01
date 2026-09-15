@@ -58,16 +58,19 @@ body.wait-cursor *{
 
 /* ---- retro Win95-style scrollbars ---- */
 ::-webkit-scrollbar{ width:16px; height:16px; }
-::-webkit-scrollbar-corner{ background:#c0c0c0; }
-::-webkit-scrollbar-track{ background:#c0c0c0; }
+::-webkit-scrollbar-corner{ background:#c0c0c0; border-radius:0; }
+::-webkit-scrollbar-track{ background:#c0c0c0; border-radius:0; }
+::-webkit-scrollbar-track-piece{ background:#c0c0c0; border-radius:0; }
 ::-webkit-scrollbar-thumb{
-  background:#c0c0c0;
+  background:#c0c0c0; border-radius:0 !important;
   border-top:2px solid #fff; border-left:2px solid #fff;
   border-bottom:2px solid #404040; border-right:2px solid #404040;
   box-shadow: inset 1px 1px 0 #dfdfdf;
+  background-clip:padding-box;
 }
+::-webkit-scrollbar-thumb:hover{ background:#c0c0c0; }
 ::-webkit-scrollbar-button{
-  background-color:#c0c0c0; background-repeat:no-repeat; background-position:center;
+  background-color:#c0c0c0; background-repeat:no-repeat; background-position:center; border-radius:0;
   border-top:2px solid #fff; border-left:2px solid #fff;
   border-bottom:2px solid #404040; border-right:2px solid #404040;
   width:16px; height:16px;
