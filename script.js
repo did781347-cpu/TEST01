@@ -387,6 +387,62 @@ function openPaintViewer(src, name){
   showWindow("win-paint");
 }
 
+/* 페이지를 처음 열었을 때: 스케줄러 오른쪽에 그림판 창을 띄우고,
+   시트("그림" 탭)의 가장 마지막(최신) 그림을 자동으로 보여줍니다. */
+function pictureSrcFor(name){
+  return /^https?:\/\//i.test(name) ? name : `pictures/${encodeURI(name)}`;
+}
+
+async function showLatestPictureOnLoad(){
+  try {
+    const rows = await fetchSheet(CONFIG.PICTURES_SHEET);
+    const items = rows
+      .map(r => ({ name: (r[0]||"").trim(), caption: (r[1]||"").trim() }))
+      .filter(f => f.name);
+    if (items.length === 0) return; // 등록된 그림이 없으면 자동으로 띄우지 않음
+
+    const latest = items[items.length - 1]; // 시트 맨 아래 줄 = 가장 최신
+    const src = pictureSrcFor(latest.name);
+    const img = document.getElementById("paint-image");
+    const title = document.getElementById("paint-title");
+    if (img){ img.src = src; img.alt = latest.caption || latest.name; }
+    if (title) title.textContent = (latest.caption || latest.name) + " - 그림판";
+    setupPaintPalette();
+
+    const win = document.getElementById("win-paint");
+    if (!win) return;
+
+    let hasSavedPos = false;
+    try { hasSavedPos = !!localStorage.getItem("404-win-pos:win-paint"); } catch(e){}
+
+    if (!hasSavedPos){
+      // 사용자가 예전에 직접 옮겨둔 적이 없으면, 스케줄러 창 오른쪽에 기본 배치
+      const desktop = document.querySelector(".desktop");
+      const sched = document.getElementById("win-schedule");
+      if (desktop && sched){
+        const dRect = desktop.getBoundingClientRect();
+        const sRect = sched.getBoundingClientRect();
+        const paintWidth = 360;
+        let left = sRect.right - dRect.left + 16;
+        if (left + paintWidth + 16 > dRect.width){
+          left = Math.max(16, dRect.width - paintWidth - 16);
+        }
+        win.classList.add("dragged"); // 가운데 정렬 대신 직접 지정한 좌표를 쓰기 위함
+        win.style.left = left + "px";
+        win.style.top = Math.max(16, sRect.top - dRect.top) + "px";
+        win.style.width = paintWidth + "px";
+        win.style.height = "380px";
+      }
+    }
+
+    win.classList.remove("hidden");
+    win.style.zIndex = ++zTop;
+    refreshAllTaskbarItems();
+  } catch(err){
+    console.error("최신 그림 자동 표시 실패:", err);
+  }
+}
+
 /* ---------------- 인터넷 창: 위키 페이지 (구글 시트 "위키" 탭을 읽어와 표시) ----------------
    시트 A열에 "제목" 이라고 쓰면 B열 내용이 위키 맨 위 큰 제목(h1)이 되고,
    A열에 "요약" 이라고 쓰면 B열 내용이 제목 아래 소개 문구가 됩니다.
@@ -1207,4 +1263,5 @@ function setupDesktopContextMenu(){
   setupDesktopContextMenu();
   setupInetNavigation();
   loadPictures();
+  showLatestPictureOnLoad();
 })();
