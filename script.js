@@ -32,9 +32,10 @@ const CONFIG = {
                   A열에 "요약"이라고 쓰면 B열이 제목 아래 소개 문구가 됩니다.
                   (이 두 행은 목차/번호에는 포함되지 않음)
 
-   [그림 탭]    A:파일명(pictures 폴더에 올린 이미지의 실제 파일명, 예: fanart1.png)  B:설명(옵션)
-                → 이미지 파일은 pictures 폴더에 git으로 올리고, 이 시트에 파일명 한 줄만
-                  추가하면 그림 창에 자동으로 나타납니다.
+   [그림 탭]    A:파일명 또는 이미지 링크  B:설명(옵션)
+                → pictures 폴더에 올린 이미지면 파일명만 (예: fanart1.png)
+                → 다른 곳에 올려둔 이미지면 링크를 통째로 (예: https://...로 시작하는 주소)
+                  둘 중 아무거나 적어도 자동으로 구분해서 보여줍니다.
 */
 
 function csvUrl(sheetName){
@@ -336,11 +337,15 @@ async function loadPictures(){
       return;
     }
     files.forEach(f=>{
+      // A열에 http(s):// 로 시작하는 링크를 적으면 그 링크를 그대로 쓰고,
+      // 그냥 파일명만 적으면 pictures 폴더 안의 그 파일을 씁니다.
+      const src = /^https?:\/\//i.test(f.name) ? f.name : `pictures/${encodeURI(f.name)}`;
       const card = document.createElement("div");
       card.className = "pcard";
       card.innerHTML = `
-        <div class="pthumb"><img src="pictures/${encodeURI(f.name)}" alt="${escapeHtml(f.caption||f.name)}" loading="lazy"></div>
+        <div class="pthumb"><img src="${src}" alt="${escapeHtml(f.caption||f.name)}" loading="lazy"></div>
         <div class="pname">${escapeHtml(f.caption||f.name)}</div>`;
+      card.addEventListener("click", () => openPaintViewer(src, f.caption || f.name));
       grid.appendChild(card);
     });
     if (count) count.textContent = `그림 ${files.length}장`;
@@ -354,6 +359,33 @@ async function loadPictures(){
 }
 const pictureRefreshBtn = document.getElementById("picture-refresh");
 if (pictureRefreshBtn) pictureRefreshBtn.onclick = loadPictures;
+
+/* ---------------- 그림판(Paint) 스타일 이미지 뷰어 ---------------- */
+const PAINT_PALETTE_COLORS = [
+  "#000000","#808080","#800000","#808000","#008000","#008080","#000080","#800080",
+  "#808040","#004040","#0080ff","#004080","#4000ff","#804000","#ff0000","#ffff00",
+  "#00ff00","#00ffff","#0000ff","#ff00ff","#ffff80","#00ff80","#80ffff","#8080ff",
+  "#ff0080","#ffffff","#c0c0c0","#f0f0f0"
+];
+function setupPaintPalette(){
+  const el = document.getElementById("paint-palette");
+  if (!el || el.childElementCount) return; // 이미 만들어져 있으면 다시 안 만듦
+  PAINT_PALETTE_COLORS.forEach(color => {
+    const sw = document.createElement("div");
+    sw.className = "paint-swatch";
+    sw.style.background = color;
+    el.appendChild(sw);
+  });
+}
+
+function openPaintViewer(src, name){
+  const img = document.getElementById("paint-image");
+  const title = document.getElementById("paint-title");
+  if (img) { img.src = src; img.alt = name || ""; }
+  if (title) title.textContent = (name ? name + " - " : "") + "그림판";
+  setupPaintPalette();
+  showWindow("win-paint");
+}
 
 /* ---------------- 인터넷 창: 위키 페이지 (구글 시트 "위키" 탭을 읽어와 표시) ----------------
    시트 A열에 "제목" 이라고 쓰면 B열 내용이 위키 맨 위 큰 제목(h1)이 되고,
@@ -740,6 +772,7 @@ function setupDragAndResize(){
   makeWindowInteractive(document.getElementById("win-mine"));
   makeWindowInteractive(document.getElementById("win-inet"));
   makeWindowInteractive(document.getElementById("win-pictures"));
+  makeWindowInteractive(document.getElementById("win-paint"));
   makeToastDraggable(document.getElementById("err-toast"));
 }
 

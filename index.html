@@ -269,6 +269,37 @@
       <div class="resize-handle" data-resize="win-pictures"></div>
     </div>
 
+    <!-- PAINT VIEWER (그림판 느낌으로 이미지 크게 보기) -->
+    <div class="window hidden" id="win-paint">
+      <div class="titlebar">
+        <span id="paint-title">제목 없음 - 그림판</span>
+        <div class="wctl win-xp">
+          <div class="wbtn min"></div><div class="wbtn max"></div>
+          <div class="wbtn close" data-close="win-paint">×</div>
+        </div>
+      </div>
+      <div class="menubar">
+        <span>파일(F)</span><span>편집(E)</span><span>보기(V)</span><span>이미지(I)</span><span>도움말(H)</span>
+      </div>
+      <div class="paint-toolbar bevel-in">
+        <div class="paint-tools bevel-in">
+          <div class="paint-tool" title="연필">✏️</div>
+          <div class="paint-tool" title="지우개">🧹</div>
+          <div class="paint-tool" title="채우기">🪣</div>
+          <div class="paint-tool" title="붓">🖌️</div>
+          <div class="paint-tool" title="스포이트">💧</div>
+          <div class="paint-tool" title="돋보기">🔍</div>
+        </div>
+        <div class="paint-palette bevel-in" id="paint-palette"></div>
+      </div>
+      <div class="content paint-content bevel-in">
+        <div class="paint-canvas" id="paint-canvas">
+          <img id="paint-image" src="" alt="">
+        </div>
+      </div>
+      <div class="resize-handle" data-resize="win-paint"></div>
+    </div>
+
     <!-- global taskbar, fixed to the bottom of the screen -->
     <div class="taskbar">
       <div class="startbtn bevel-out"><span class="winlogo"></span>시작</div>
@@ -277,6 +308,7 @@
       <div class="bevel-in taskitem hidden" data-win="win-mine">minesweeper.exe</div>
       <div class="bevel-in taskitem hidden" data-win="win-inet">iexplore.exe</div>
       <div class="bevel-in taskitem hidden" data-win="win-pictures">pictures.exe</div>
+      <div class="bevel-in taskitem hidden" data-win="win-paint">paint.exe</div>
       <div class="spacer"></div>
       <div class="bevel-in clock" id="clock">--:--</div>
     </div>
