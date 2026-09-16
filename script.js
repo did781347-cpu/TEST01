@@ -11,6 +11,7 @@ const CONFIG = {
   SCHEDULE_SHEET: "일정",       // 일정표 탭 이름
   GAMES_SHEET: "게임아카이브",   // 게임 아카이브 탭 이름
   TODO_SHEET: "메모",           // 할일 메모 탭 이름
+  WIKI_SHEET: "위키",           // 위키(소개/세계관) 탭 이름
 
   // 우측 상단 "System Error" 팝업 문구 — 자유롭게 수정하세요
   ERROR_TITLE: "System Error",
@@ -22,6 +23,10 @@ const CONFIG = {
    [스케줄 탭]  A:date(YYYY-MM-DD)  B:title  C:tag(yellow/blue/red/green/gray 또는 #ffaa00 같은 컬러 코드)
    [게임 탭]    A:title  B:rating(1~5)  C:note  D:tag(옵션)
    [메모 탭]    A: 첫 행은 아무 헤더(예: item), 2행부터 한 줄에 할일 하나씩
+
+   [위키 탭]    A:섹션 제목(예: 소개)  B:내용(줄바꿈은 셀 안에서 Alt+Enter로 넣으면 그대로 유지됨)
+                → 한 행이 위키의 섹션 하나가 됩니다. 필요한 만큼 행을 추가하면 목차와
+                  본문이 자동으로 늘어납니다.
 
    그림(팬아트) 목록은 시트가 아니라 GitHub Actions로 자동 관리됩니다.
    pictures 폴더에 이미지를 넣고 git에 push하면, 워크플로우(.github/workflows/
@@ -345,8 +350,8 @@ async function loadPictures(){
 const pictureRefreshBtn = document.getElementById("picture-refresh");
 if (pictureRefreshBtn) pictureRefreshBtn.onclick = loadPictures;
 
-/* ---------------- 인터넷 창: 위키 페이지 (기덕이 소개 & 세계관) ---------------- */
-function buildWikiHTML(){
+/* ---------------- 인터넷 창: 위키 페이지 (구글 시트 "위키" 탭을 읽어와 표시) ---------------- */
+function buildWikiShellHTML(){
   return `
     <div class="wiki-page">
       <div class="wiki-header">
@@ -354,24 +359,61 @@ function buildWikiHTML(){
         <div class="wiki-searchbar">검색: <input type="text" disabled placeholder="검색 기능 준비중"></div>
       </div>
       <div class="wiki-body">
-        <aside class="wiki-toc">
+        <aside class="wiki-toc" id="wiki-toc">
           <div class="wiki-toc-title">목차</div>
-          <a href="#wiki-intro">1. 소개</a>
-          <a href="#wiki-world">2. 세계관</a>
-          <a href="#wiki-etc">3. 기타</a>
         </aside>
-        <article class="wiki-article">
+        <article class="wiki-article" id="wiki-article">
           <h1>기덕이 (404 DUCK)</h1>
-          <p class="wiki-summary">이 페이지는 <b>기덕이</b>의 소개와 세계관을 정리해두는 위키입니다. 아래 내용을 자유롭게 채워주세요.</p>
-          <h2 id="wiki-intro">1. 소개</h2>
-          <p class="wiki-placeholder">[여기에 기덕이 소개를 적어주세요. 예: 이름, 종족, 성격, 말투 등]</p>
-          <h2 id="wiki-world">2. 세계관</h2>
-          <p class="wiki-placeholder">[여기에 세계관 설정을 적어주세요. 예: 사는 곳, 배경 이야기, 설정 등]</p>
-          <h2 id="wiki-etc">3. 기타</h2>
-          <p class="wiki-placeholder">[추가로 적고 싶은 내용이 있다면 여기에 적어주세요.]</p>
+          <p class="wiki-placeholder">불러오는 중...</p>
         </article>
       </div>
     </div>`;
+}
+
+function wikiSlugify(title, index){
+  return "wiki-sec-" + index + "-" + String(title).replace(/[^a-zA-Z0-9가-힣]+/g, "");
+}
+
+async function loadWikiContent(){
+  const toc = document.getElementById("wiki-toc");
+  const article = document.getElementById("wiki-article");
+  if (!toc || !article) return; // 위키 페이지가 이미 다른 화면으로 넘어간 경우
+  beginLoad();
+  try {
+    const rows = await fetchSheet(CONFIG.WIKI_SHEET);
+    const sections = rows
+      .map(r => ({ title: (r[0]||"").trim(), body: (r[1]||"").trim() }))
+      .filter(s => s.title);
+
+    // 로딩 중 다른 페이지로 이동했으면 결과를 반영하지 않음
+    if (!document.getElementById("wiki-article")) return;
+
+    if (sections.length === 0){
+      toc.innerHTML = `<div class="wiki-toc-title">목차</div>`;
+      article.innerHTML = `<h1>기덕이 (404 DUCK)</h1><p class="wiki-placeholder">아직 위키 내용이 없습니다. 구글 시트 "${CONFIG.WIKI_SHEET}" 탭의 A열(제목)/B열(내용)에 내용을 채워주세요.</p>`;
+      return;
+    }
+
+    const tocLinks = sections.map((s, i) => {
+      const id = wikiSlugify(s.title, i);
+      return `<a href="#${id}">${i + 1}. ${escapeHtml(s.title)}</a>`;
+    }).join("");
+    toc.innerHTML = `<div class="wiki-toc-title">목차</div>${tocLinks}`;
+
+    const articleBody = sections.map((s, i) => {
+      const id = wikiSlugify(s.title, i);
+      const body = s.body ? escapeHtml(s.body) : `<span class="wiki-placeholder">[내용 없음]</span>`;
+      return `<h2 id="${id}">${i + 1}. ${escapeHtml(s.title)}</h2><p>${body}</p>`;
+    }).join("");
+    article.innerHTML = `<h1>기덕이 (404 DUCK)</h1>${articleBody}`;
+  } catch(err){
+    if (!document.getElementById("wiki-article")) return;
+    toc.innerHTML = `<div class="wiki-toc-title">목차</div>`;
+    article.innerHTML = `<h1>기덕이 (404 DUCK)</h1><p class="wiki-placeholder">위키 내용을 불러오지 못했습니다. 구글 시트에 "${CONFIG.WIKI_SHEET}" 탭이 있는지 확인해주세요.</p>`;
+    console.error(err);
+  } finally {
+    endLoad();
+  }
 }
 
 function cacheInetHomeIfNeeded(){
@@ -385,8 +427,9 @@ function showWikiPage(){
   const container = document.querySelector("#win-inet .inet-content");
   const addr = document.querySelector("#win-inet .inet-addr");
   if (!container) return;
-  container.innerHTML = buildWikiHTML();
+  container.innerHTML = buildWikiShellHTML();
   if (addr) addr.textContent = "http://www.404duck.co.kr/wiki/기덕이";
+  loadWikiContent();
 }
 
 function showInetHomeCached(){
