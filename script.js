@@ -72,21 +72,38 @@ function tickClock(){
 tickClock();
 setInterval(tickClock, 15000);
 
-/* ---------------- window switching ---------------- */
+/* ---------------- window switching (독립 창: 하나 열어도 다른 창은 안 닫힘) ---------------- */
+function updateTaskbarItem(id){
+  const win = document.getElementById(id);
+  const item = document.querySelector('.taskitem[data-win="' + id + '"]');
+  if (!win || !item) return;
+  item.classList.toggle("hidden", win.classList.contains("hidden"));
+  item.classList.toggle("active", !win.classList.contains("hidden") && Number(win.style.zIndex || 0) === zTop);
+}
+function refreshAllTaskbarItems(){
+  document.querySelectorAll(".taskitem[data-win]").forEach(item => updateTaskbarItem(item.dataset.win));
+}
 function showWindow(id){
-  document.getElementById("win-schedule").classList.toggle("hidden", id !== "win-schedule");
-  document.getElementById("win-archive").classList.toggle("hidden", id !== "win-archive");
-  const taskitem = document.getElementById("taskitem");
-  if (taskitem){
-    taskitem.textContent = id === "win-archive" ? "game_archive.exe" : "404_scheduler.exe";
-  }
+  const win = document.getElementById(id);
+  if (!win) return;
+  win.classList.remove("hidden");
+  win.style.zIndex = ++zTop;
+  refreshAllTaskbarItems();
 }
 document.getElementById("open-schedule").onclick = () => { if (justDragged) return; showWindow("win-schedule"); };
 document.getElementById("open-archive").onclick = () => { if (justDragged) return; showWindow("win-archive"); };
+document.getElementById("open-mine").onclick = () => { if (justDragged) return; showWindow("win-mine"); };
+document.getElementById("open-inet").onclick = () => { if (justDragged) return; renderInetHome(); showWindow("win-inet"); };
 document.getElementById("goto-archive").onclick = () => showWindow("win-archive");
 document.getElementById("goto-schedule").onclick = () => showWindow("win-schedule");
 document.querySelectorAll("[data-close]").forEach(btn=>{
-  btn.onclick = () => btn.closest(".window").classList.add("hidden");
+  btn.onclick = () => {
+    btn.closest(".window").classList.add("hidden");
+    refreshAllTaskbarItems();
+  };
+});
+document.querySelectorAll(".taskitem[data-win]").forEach(item=>{
+  item.onclick = () => showWindow(item.dataset.win); // 항상 해당 창을 맨 위로
 });
 document.querySelectorAll(".close-toast").forEach(btn=>{
   btn.onclick = () => document.getElementById("err-toast").classList.add("hidden");
@@ -294,7 +311,9 @@ let zTop = 10;
 
 function markDragged(){
   justDragged = true;
-  setTimeout(() => { justDragged = false; }, 0);
+  // 모바일은 touchend 이후 합성 click 이벤트가 한 박자 늦게 오기 때문에
+  // 0ms로 풀어버리면 click이 도착하기 전에 플래그가 꺼져서 링크가 눌려버림
+  setTimeout(() => { justDragged = false; }, 400);
 }
 
 // 아이콘: 자유롭게 옮기기만 함 (위치는 이 브라우저에 저장됨)
@@ -457,6 +476,7 @@ function makeWindowInteractive(win){
     toPixelPosition();
     dragging = true; moved = false;
     win.style.zIndex = ++zTop;
+    if (typeof refreshAllTaskbarItems === "function") refreshAllTaskbarItems();
     const p = e.touches ? e.touches[0] : e;
     startX = p.clientX; startY = p.clientY;
     startLeft = parseFloat(win.style.left) || 0;
@@ -536,7 +556,7 @@ function makeWindowInteractive(win){
 }
 
 function setupDragAndResize(){
-  ["open-schedule","open-archive","icon-chzzk","icon-cafe","icon-x","icon-youtube"].forEach(id=>{
+  ["open-schedule","open-archive","open-mine","open-inet","icon-chzzk","icon-cafe","icon-x","icon-youtube"].forEach(id=>{
     makeIconDraggable(document.getElementById(id));
   });
   // 링크 아이콘은 드래그 직후엔 새 탭 이동을 막음
@@ -545,6 +565,8 @@ function setupDragAndResize(){
   });
   makeWindowInteractive(document.getElementById("win-schedule"));
   makeWindowInteractive(document.getElementById("win-archive"));
+  makeWindowInteractive(document.getElementById("win-mine"));
+  makeWindowInteractive(document.getElementById("win-inet"));
   makeToastDraggable(document.getElementById("err-toast"));
 }
 
@@ -561,7 +583,7 @@ function applyErrorToastText(){
 /* ---------------- retro boot screen ---------------- */
 const BOOT_LINES = [
   "404 SYSTEM BIOS v4.04",
-  "Copyright (C) 덩기덕 404",
+  "Copyright (C) Rabbi",
   "",
   "CPU: 404-DUCK Processor",
   "Detecting IDE drives... OK",
@@ -614,6 +636,355 @@ function runBootSequence(){
   setTimeout(finish, 4500); // safety timeout
 }
 
+/* ---------------- 미니게임: 지뢰찾기 ---------------- */
+const MINE_COLS = 9, MINE_ROWS = 9, MINE_COUNT = 10;
+let mineState = null; // { grid, opened, flagged, over, won, timer, timerId }
+
+function mineIndex(r, c){ return r * MINE_COLS + c; }
+
+function mineNeighbors(r, c){
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++){
+    for (let dc = -1; dc <= 1; dc++){
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < MINE_ROWS && nc >= 0 && nc < MINE_COLS) out.push([nr, nc]);
+    }
+  }
+  return out;
+}
+
+function mineBuildGrid(safeR, safeC){
+  const total = MINE_COLS * MINE_ROWS;
+  const mines = new Set();
+  while (mines.size < MINE_COUNT){
+    const idx = Math.floor(Math.random() * total);
+    const r = Math.floor(idx / MINE_COLS), c = idx % MINE_COLS;
+    if (r === safeR && c === safeC) continue; // 첫 클릭은 항상 안전
+    mines.add(idx);
+  }
+  const grid = [];
+  for (let r = 0; r < MINE_ROWS; r++){
+    const row = [];
+    for (let c = 0; c < MINE_COLS; c++){
+      row.push({ mine: mines.has(mineIndex(r, c)), n: 0 });
+    }
+    grid.push(row);
+  }
+  for (let r = 0; r < MINE_ROWS; r++){
+    for (let c = 0; c < MINE_COLS; c++){
+      if (grid[r][c].mine) continue;
+      grid[r][c].n = mineNeighbors(r, c).filter(([nr, nc]) => grid[nr][nc].mine).length;
+    }
+  }
+  return grid;
+}
+
+function mineStopTimer(){
+  if (mineState && mineState.timerId){ clearInterval(mineState.timerId); mineState.timerId = null; }
+}
+
+function mineUpdateFlagCount(){
+  const el = document.getElementById("mine-flags");
+  if (!el || !mineState) return;
+  el.textContent = "🚩 " + Math.max(0, MINE_COUNT - mineState.flagged.size);
+}
+
+function mineSetFace(face){
+  const el = document.getElementById("mine-face");
+  if (el) el.textContent = face;
+}
+
+function mineRender(){
+  const board = document.getElementById("mine-board");
+  if (!board || !mineState) return;
+  board.innerHTML = "";
+  for (let r = 0; r < MINE_ROWS; r++){
+    for (let c = 0; c < MINE_COLS; c++){
+      const cell = document.createElement("div");
+      cell.className = "mine-cell";
+      const key = mineIndex(r, c);
+      const opened = mineState.opened.has(key);
+      const flagged = mineState.flagged.has(key);
+      const data = mineState.grid ? mineState.grid[r][c] : null;
+      if (opened && data){
+        cell.classList.add("open");
+        if (data.mine){
+          cell.classList.add("mine");
+          cell.textContent = "💣";
+        } else if (data.n > 0){
+          cell.dataset.n = data.n;
+          cell.textContent = data.n;
+        }
+      } else if (flagged){
+        cell.classList.add("flag");
+        cell.textContent = "🚩";
+      }
+      cell.addEventListener("click", () => mineHandleOpen(r, c));
+      cell.addEventListener("contextmenu", (e) => { e.preventDefault(); mineHandleFlag(r, c); });
+      board.appendChild(cell);
+    }
+  }
+  mineUpdateFlagCount();
+}
+
+function mineFloodOpen(r, c){
+  const stack = [[r, c]];
+  while (stack.length){
+    const [cr, cc] = stack.pop();
+    const key = mineIndex(cr, cc);
+    if (mineState.opened.has(key) || mineState.flagged.has(key)) continue;
+    mineState.opened.add(key);
+    const cell = mineState.grid[cr][cc];
+    if (cell.n === 0 && !cell.mine){
+      mineNeighbors(cr, cc).forEach(([nr, nc]) => {
+        if (!mineState.opened.has(mineIndex(nr, nc))) stack.push([nr, nc]);
+      });
+    }
+  }
+}
+
+function mineCheckWin(){
+  const total = MINE_COLS * MINE_ROWS;
+  return mineState.opened.size === total - MINE_COUNT;
+}
+
+function mineHandleOpen(r, c){
+  if (!mineState || mineState.over) return;
+  const key = mineIndex(r, c);
+  if (mineState.flagged.has(key)) return;
+
+  if (!mineState.grid){
+    mineState.grid = mineBuildGrid(r, c);
+    mineState.timer = 0;
+    const timerEl = document.getElementById("mine-timer");
+    mineState.timerId = setInterval(() => {
+      mineState.timer++;
+      if (timerEl) timerEl.textContent = "⏱ " + mineState.timer;
+    }, 1000);
+  }
+
+  const cellData = mineState.grid[r][c];
+  if (cellData.mine){
+    mineState.opened.add(key);
+    mineState.over = true;
+    mineStopTimer();
+    mineSetFace("😵");
+    for (let rr = 0; rr < MINE_ROWS; rr++){
+      for (let cc = 0; cc < MINE_COLS; cc++){
+        if (mineState.grid[rr][cc].mine) mineState.opened.add(mineIndex(rr, cc));
+      }
+    }
+    mineRender();
+    return;
+  }
+
+  mineFloodOpen(r, c);
+  if (mineCheckWin()){
+    mineState.over = true;
+    mineState.won = true;
+    mineStopTimer();
+    mineSetFace("😎");
+  }
+  mineRender();
+}
+
+function mineHandleFlag(r, c){
+  if (!mineState || mineState.over) return;
+  const key = mineIndex(r, c);
+  if (mineState.opened.has(key)) return;
+  if (mineState.flagged.has(key)) mineState.flagged.delete(key);
+  else mineState.flagged.add(key);
+  mineRender();
+}
+
+function mineReset(){
+  mineStopTimer();
+  mineState = { grid: null, opened: new Set(), flagged: new Set(), over: false, won: false, timer: 0, timerId: null };
+  mineSetFace("🙂");
+  const timerEl = document.getElementById("mine-timer");
+  if (timerEl) timerEl.textContent = "⏱ 0";
+  mineRender();
+}
+
+function setupMinesweeper(){
+  const face = document.getElementById("mine-face");
+  if (face) face.onclick = mineReset;
+  mineReset();
+}
+
+/* ---------------- 바탕화면 연타 이스터에그: 화면 금가고 결국 박살 ---------------- */
+const CRACK_LIMIT = 14;
+let crackCount = 0;
+let crackBusy = false;
+
+function crackStroke(d){
+  return `<path d="${d}" stroke="rgba(0,0,0,.55)" stroke-width="1.4" fill="none" stroke-linejoin="round"/>` +
+         `<path d="${d}" stroke="rgba(255,255,255,.85)" stroke-width="0.6" fill="none" stroke-linejoin="round"/>`;
+}
+
+// 유리 깨진 느낌: 중심에서 뻗는 불규칙한 금 + 끝에서 갈라지는 잔금 (완전 대칭 거미줄 지양)
+function crackMarkSvg(size){
+  const cx = size / 2, cy = size / 2;
+  const legCount = 6 + Math.floor(Math.random() * 5);
+  const rMax = size / 2;
+  const angles = [];
+  for (let i = 0; i < legCount; i++){
+    angles.push((Math.PI * 2 * i) / legCount + (Math.random() - 0.5) * 0.9);
+  }
+  let paths = "";
+  const tips = [];
+
+  angles.forEach(angle => {
+    const legLen = rMax * (0.55 + Math.random() * 0.45); // 다리마다 길이 다르게
+    const segs = 3 + Math.floor(Math.random() * 2);
+    let d = `M ${cx.toFixed(1)} ${cy.toFixed(1)}`;
+    let px = cx, py = cy;
+    for (let s = 0; s < segs; s++){
+      const len = legLen * ((s + 1) / segs);
+      const jitter = (Math.random() - 0.5) * size * 0.16;
+      const perp = angle + Math.PI / 2;
+      px = cx + Math.cos(angle) * len + Math.cos(perp) * jitter;
+      py = cy + Math.sin(angle) * len + Math.sin(perp) * jitter;
+      d += ` L ${px.toFixed(1)} ${py.toFixed(1)}`;
+    }
+    paths += crackStroke(d);
+    tips.push([px, py, angle]);
+
+    // 다리 끝에서 짧게 갈라지는 잔금 1~2개
+    const branches = 1 + Math.floor(Math.random() * 2);
+    for (let b = 0; b < branches; b++){
+      const branchAngle = angle + (Math.random() - 0.5) * 1.6;
+      const branchLen = legLen * (0.2 + Math.random() * 0.25);
+      const bx = px + Math.cos(branchAngle) * branchLen;
+      const by = py + Math.sin(branchAngle) * branchLen;
+      paths += crackStroke(`M ${px.toFixed(1)} ${py.toFixed(1)} L ${bx.toFixed(1)} ${by.toFixed(1)}`);
+    }
+  });
+
+  // 인접한 다리끼리만 가끔 잇는 짧고 삐뚤어진 금 (완전한 원 대신 군데군데)
+  for (let i = 0; i < tips.length; i++){
+    if (Math.random() < 0.45) continue;
+    const [x1, y1] = tips[i];
+    const [x2, y2] = tips[(i + 1) % tips.length];
+    const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * size * 0.12;
+    const my = (y1 + y2) / 2 + (Math.random() - 0.5) * size * 0.12;
+    paths += crackStroke(`M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${mx.toFixed(1)} ${my.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}`);
+  }
+
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">${paths}</svg>`;
+}
+
+function addCrackMark(x, y){
+  const layer = document.getElementById("crack-layer");
+  if (!layer) return;
+  const size = 140 + Math.random() * 100;
+  const mark = document.createElement("div");
+  mark.className = "crack-mark";
+  mark.style.left = (x - size / 2) + "px";
+  mark.style.top = (y - size / 2) + "px";
+  mark.innerHTML = crackMarkSvg(size);
+  layer.appendChild(mark);
+}
+
+function triggerShatter(){
+  if (crackBusy) return;
+  crackBusy = true;
+  const bsod = document.getElementById("bsod-overlay");
+  if (bsod) bsod.classList.add("show");
+  // 자동으로 사라지지 않음 — 화면을 한 번 더 클릭하거나 키를 눌러야 꺼짐
+}
+
+function setupCrackEasterEgg(){
+  const desktop = document.querySelector(".desktop");
+  if (!desktop) return;
+  desktop.addEventListener("dblclick", (e) => {
+    if (crackBusy) return;
+    if (e.target.closest(".window, .dicon, .taskbar, .err-toast, .boot-screen, .bsod-overlay")) return;
+    crackCount++;
+    addCrackMark(e.clientX, e.clientY);
+    if (crackCount >= CRACK_LIMIT) triggerShatter();
+  });
+  const bsod = document.getElementById("bsod-overlay");
+  if (bsod){
+    bsod.addEventListener("click", () => { bsod.classList.remove("show"); crackCount = 0; crackBusy = false; const l = document.getElementById("crack-layer"); if (l) l.innerHTML = ""; });
+    document.addEventListener("keydown", () => { if (bsod.classList.contains("show")){ bsod.classList.remove("show"); crackCount = 0; crackBusy = false; const l = document.getElementById("crack-layer"); if (l) l.innerHTML = ""; } });
+  }
+}
+
+/* ---------------- 인터넷 창: 가끔(약 20%) 오프라인 공룡 화면 ---------------- */
+let inetHomeHTML = null; // 정상 홈페이지 원본 마크업 (최초 로드시 캐시)
+
+function buildDinoHTML(){
+  return `
+    <div class="inet-dino-page">
+      <img class="dino-scene" src="dino.png" alt="offline dino" draggable="false"/>
+      <div class="inet-dino-title">You are offline</div>
+      <div class="inet-dino-try">
+        <p>Try:</p>
+        <ul>
+          <li>Don't panic</li>
+          <li>Look around</li>
+          <li>Interact with reality</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+function renderInetHome(){
+  const page = document.querySelector("#win-inet .inet-page");
+  const addr = document.querySelector("#win-inet .inet-addr");
+  if (!page) return;
+  if (inetHomeHTML === null) inetHomeHTML = page.innerHTML; // 최초 1회만 원본 캐시
+  const showDino = Math.random() < 0.2; // 약 20% 확률
+  page.innerHTML = showDino ? buildDinoHTML() : inetHomeHTML;
+  if (addr) addr.textContent = showDino ? "http://www.404duck.co.kr/error" : "http://www.404duck.co.kr/";
+}
+
+/* ---------------- 바탕화면 우클릭 메뉴: 아이콘 정렬 ---------------- */
+function arrangeIcons(){
+  document.querySelectorAll(".dicon").forEach(el => {
+    el.style.left = "";
+    el.style.top = "";
+    try {
+      localStorage.removeItem("404-icon-pos:" + (el.id || el.textContent));
+    } catch(e){}
+  });
+}
+
+function setupDesktopContextMenu(){
+  const desktop = document.querySelector(".desktop");
+  if (!desktop) return;
+
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu hidden";
+  menu.innerHTML =
+    '<div class="ctx-item" id="ctx-arrange">아이콘 정렬(A)</div>' +
+    '<div class="ctx-sep"></div>' +
+    '<div class="ctx-item" id="ctx-refresh">새로고침(R)</div>';
+  document.body.appendChild(menu);
+
+  function hideMenu(){ menu.classList.add("hidden"); }
+  function showMenuAt(x, y){
+    menu.classList.remove("hidden");
+    const w = menu.offsetWidth, h = menu.offsetHeight;
+    menu.style.left = Math.min(x, window.innerWidth - w - 4) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - h - 4) + "px";
+  }
+
+  desktop.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".window, .dicon, .taskbar, .err-toast, .boot-screen, .bsod-overlay")) return;
+    e.preventDefault();
+    showMenuAt(e.clientX, e.clientY);
+  });
+  document.addEventListener("click", (e) => { if (!menu.contains(e.target)) hideMenu(); });
+  document.addEventListener("contextmenu", (e) => { if (!e.target.closest(".desktop")) hideMenu(); });
+  window.addEventListener("scroll", hideMenu, true);
+
+  menu.querySelector("#ctx-arrange").addEventListener("click", () => { arrangeIcons(); hideMenu(); });
+  menu.querySelector("#ctx-refresh").addEventListener("click", hideMenu);
+}
+
 (function init(){
   const now = new Date();
   viewYear = now.getFullYear();
@@ -625,4 +996,7 @@ function runBootSequence(){
   loadSchedule();
   loadTodo();
   loadGames();
+  setupMinesweeper();
+  setupCrackEasterEgg();
+  setupDesktopContextMenu();
 })();
