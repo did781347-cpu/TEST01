@@ -27,6 +27,9 @@ const CONFIG = {
    [위키 탭]    A:섹션 제목(예: 소개)  B:내용(줄바꿈은 셀 안에서 Alt+Enter로 넣으면 그대로 유지됨)
                 → 한 행이 위키의 섹션 하나가 됩니다. 필요한 만큼 행을 추가하면 목차와
                   본문이 자동으로 늘어납니다.
+                → A열에 "제목"이라고 쓰면 B열이 맨 위 큰 제목(h1)이 되고,
+                  A열에 "요약"이라고 쓰면 B열이 제목 아래 소개 문구가 됩니다.
+                  (이 두 행은 목차/번호에는 포함되지 않음)
 
    그림(팬아트) 목록은 시트가 아니라 GitHub Actions로 자동 관리됩니다.
    pictures 폴더에 이미지를 넣고 git에 push하면, 워크플로우(.github/workflows/
@@ -350,20 +353,25 @@ async function loadPictures(){
 const pictureRefreshBtn = document.getElementById("picture-refresh");
 if (pictureRefreshBtn) pictureRefreshBtn.onclick = loadPictures;
 
-/* ---------------- 인터넷 창: 위키 페이지 (구글 시트 "위키" 탭을 읽어와 표시) ---------------- */
+/* ---------------- 인터넷 창: 위키 페이지 (구글 시트 "위키" 탭을 읽어와 표시) ----------------
+   시트 A열에 "제목" 이라고 쓰면 B열 내용이 위키 맨 위 큰 제목(h1)이 되고,
+   A열에 "요약" 이라고 쓰면 B열 내용이 제목 아래 소개 문구가 됩니다.
+   ("제목"/"요약" 두 행은 목차·번호에는 포함되지 않습니다)
+   그 외의 행은 전부 순서대로 번호 붙은 섹션이 됩니다. */
+const WIKI_DEFAULT_TITLE = "기덕이 (404 DUCK)";
+
 function buildWikiShellHTML(){
   return `
     <div class="wiki-page">
       <div class="wiki-header">
         <div class="wiki-logo">덩기덕 위키</div>
-        <div class="wiki-searchbar">검색: <input type="text" disabled placeholder="검색 기능 준비중"></div>
       </div>
       <div class="wiki-body">
         <aside class="wiki-toc" id="wiki-toc">
           <div class="wiki-toc-title">목차</div>
         </aside>
         <article class="wiki-article" id="wiki-article">
-          <h1>기덕이 (404 DUCK)</h1>
+          <h1>${escapeHtml(WIKI_DEFAULT_TITLE)}</h1>
           <p class="wiki-placeholder">불러오는 중...</p>
         </article>
       </div>
@@ -381,16 +389,24 @@ async function loadWikiContent(){
   beginLoad();
   try {
     const rows = await fetchSheet(CONFIG.WIKI_SHEET);
-    const sections = rows
+    const all = rows
       .map(r => ({ title: (r[0]||"").trim(), body: (r[1]||"").trim() }))
       .filter(s => s.title);
 
     // 로딩 중 다른 페이지로 이동했으면 결과를 반영하지 않음
     if (!document.getElementById("wiki-article")) return;
 
+    const titleRow = all.find(s => s.title === "제목");
+    const summaryRow = all.find(s => s.title === "요약");
+    const sections = all.filter(s => s.title !== "제목" && s.title !== "요약");
+
+    const pageTitle = (titleRow && titleRow.body) ? titleRow.body : WIKI_DEFAULT_TITLE;
+    const summaryHtml = (summaryRow && summaryRow.body)
+      ? `<p class="wiki-summary">${escapeHtml(summaryRow.body)}</p>` : "";
+
     if (sections.length === 0){
       toc.innerHTML = `<div class="wiki-toc-title">목차</div>`;
-      article.innerHTML = `<h1>기덕이 (404 DUCK)</h1><p class="wiki-placeholder">아직 위키 내용이 없습니다. 구글 시트 "${CONFIG.WIKI_SHEET}" 탭의 A열(제목)/B열(내용)에 내용을 채워주세요.</p>`;
+      article.innerHTML = `<h1>${escapeHtml(pageTitle)}</h1>${summaryHtml}<p class="wiki-placeholder">아직 위키 내용이 없습니다. 구글 시트 "${CONFIG.WIKI_SHEET}" 탭의 A열(제목)/B열(내용)에 내용을 채워주세요.</p>`;
       return;
     }
 
@@ -405,11 +421,11 @@ async function loadWikiContent(){
       const body = s.body ? escapeHtml(s.body) : `<span class="wiki-placeholder">[내용 없음]</span>`;
       return `<h2 id="${id}">${i + 1}. ${escapeHtml(s.title)}</h2><p>${body}</p>`;
     }).join("");
-    article.innerHTML = `<h1>기덕이 (404 DUCK)</h1>${articleBody}`;
+    article.innerHTML = `<h1>${escapeHtml(pageTitle)}</h1>${summaryHtml}${articleBody}`;
   } catch(err){
     if (!document.getElementById("wiki-article")) return;
     toc.innerHTML = `<div class="wiki-toc-title">목차</div>`;
-    article.innerHTML = `<h1>기덕이 (404 DUCK)</h1><p class="wiki-placeholder">위키 내용을 불러오지 못했습니다. 구글 시트에 "${CONFIG.WIKI_SHEET}" 탭이 있는지 확인해주세요.</p>`;
+    article.innerHTML = `<h1>${escapeHtml(WIKI_DEFAULT_TITLE)}</h1><p class="wiki-placeholder">위키 내용을 불러오지 못했습니다. 구글 시트에 "${CONFIG.WIKI_SHEET}" 탭이 있는지 확인해주세요.</p>`;
     console.error(err);
   } finally {
     endLoad();
