@@ -12,6 +12,7 @@ const CONFIG = {
   GAMES_SHEET: "게임아카이브",   // 게임 아카이브 탭 이름
   TODO_SHEET: "메모",           // 할일 메모 탭 이름
   WIKI_SHEET: "위키",           // 위키(소개/세계관) 탭 이름
+  PICTURES_SHEET: "그림",       // 그림 목록 탭 이름 (파일명만 이 시트에 추가하면 됩니다)
 
   // 우측 상단 "System Error" 팝업 문구 — 자유롭게 수정하세요
   ERROR_TITLE: "System Error",
@@ -31,10 +32,9 @@ const CONFIG = {
                   A열에 "요약"이라고 쓰면 B열이 제목 아래 소개 문구가 됩니다.
                   (이 두 행은 목차/번호에는 포함되지 않음)
 
-   그림(팬아트) 목록은 시트가 아니라 GitHub Actions로 자동 관리됩니다.
-   pictures 폴더에 이미지를 넣고 git에 push하면, 워크플로우(.github/workflows/
-   update-pictures-manifest.yml)가 자동으로 pictures/manifest.json을 새로 만들어
-   커밋해줍니다 — 그림 창은 그 manifest.json을 읽어서 표시합니다.
+   [그림 탭]    A:파일명(pictures 폴더에 올린 이미지의 실제 파일명, 예: fanart1.png)  B:설명(옵션)
+                → 이미지 파일은 pictures 폴더에 git으로 올리고, 이 시트에 파일명 한 줄만
+                  추가하면 그림 창에 자동으로 나타납니다.
 */
 
 function csvUrl(sheetName){
@@ -324,26 +324,28 @@ async function loadPictures(){
   if (!grid) return;
   beginLoad();
   try {
-    const res = await fetch("pictures/manifest.json", { cache: "no-store" });
-    if (!res.ok) throw new Error("manifest fetch failed: " + res.status);
-    const files = await res.json();
+    const rows = await fetchSheet(CONFIG.PICTURES_SHEET);
+    const files = rows
+      .map(r => ({ name: (r[0]||"").trim(), caption: (r[1]||"").trim() }))
+      .filter(f => f.name);
+
     grid.innerHTML = "";
-    if (!Array.isArray(files) || files.length === 0){
-      grid.innerHTML = `<div class="picture-empty">아직 등록된 그림이 없습니다.<br>pictures 폴더에 이미지를 넣고 git에 올려주세요 (push하면 자동 반영됩니다).</div>`;
+    if (files.length === 0){
+      grid.innerHTML = `<div class="picture-empty">아직 등록된 그림이 없습니다.<br>pictures 폴더에 이미지를 올리고, 구글 시트 "${CONFIG.PICTURES_SHEET}" 탭에 파일명을 추가해주세요.</div>`;
       if (count) count.textContent = "그림 0장";
       return;
     }
-    files.forEach(name=>{
+    files.forEach(f=>{
       const card = document.createElement("div");
       card.className = "pcard";
       card.innerHTML = `
-        <div class="pthumb"><img src="pictures/${encodeURI(name)}" alt="${escapeHtml(name)}" loading="lazy"></div>
-        <div class="pname">${escapeHtml(name)}</div>`;
+        <div class="pthumb"><img src="pictures/${encodeURI(f.name)}" alt="${escapeHtml(f.caption||f.name)}" loading="lazy"></div>
+        <div class="pname">${escapeHtml(f.caption||f.name)}</div>`;
       grid.appendChild(card);
     });
     if (count) count.textContent = `그림 ${files.length}장`;
   } catch(err){
-    grid.innerHTML = `<div class="picture-empty">그림 목록을 불러오지 못했습니다.<br>pictures/manifest.json 파일이 있는지 확인해주세요.</div>`;
+    grid.innerHTML = `<div class="picture-empty">그림 목록을 불러오지 못했습니다.<br>구글 시트에 "${CONFIG.PICTURES_SHEET}" 탭이 있는지 확인해주세요.</div>`;
     if (count) count.textContent = "그림 -장";
     console.error(err);
   } finally {
