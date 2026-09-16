@@ -94,6 +94,7 @@ document.getElementById("open-schedule").onclick = () => { if (justDragged) retu
 document.getElementById("open-archive").onclick = () => { if (justDragged) return; showWindow("win-archive"); };
 document.getElementById("open-mine").onclick = () => { if (justDragged) return; showWindow("win-mine"); };
 document.getElementById("open-inet").onclick = () => { if (justDragged) return; renderInetHome(); showWindow("win-inet"); };
+document.getElementById("open-pictures").onclick = () => { if (justDragged) return; loadPictures(); showWindow("win-pictures"); };
 document.getElementById("goto-archive").onclick = () => showWindow("win-archive");
 document.getElementById("goto-schedule").onclick = () => showWindow("win-schedule");
 document.querySelectorAll("[data-close]").forEach(btn=>{
@@ -297,6 +298,105 @@ async function loadGames(){
   } finally {
     endLoad();
   }
+}
+
+/* ---------------- 그림 창 (pictures/manifest.json 목록을 읽어와 표시) ----------------
+   그림을 추가하려면:
+   1) 이미지 파일을 pictures 폴더 안에 넣고
+   2) pictures 폴더의 update-pictures.bat 를 더블클릭해서 manifest.json을 새로 만들면
+   그림 창에 자동으로 나타납니다. */
+async function loadPictures(){
+  const grid = document.getElementById("picture-grid");
+  const count = document.getElementById("picture-count");
+  if (!grid) return;
+  beginLoad();
+  try {
+    const res = await fetch("pictures/manifest.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("manifest fetch failed: " + res.status);
+    const files = await res.json();
+    grid.innerHTML = "";
+    if (!Array.isArray(files) || files.length === 0){
+      grid.innerHTML = `<div class="picture-empty">아직 등록된 그림이 없습니다.<br>pictures 폴더에 이미지를 넣고 update-pictures.bat를 실행해주세요.</div>`;
+      if (count) count.textContent = "그림 0장";
+      return;
+    }
+    files.forEach(name=>{
+      const card = document.createElement("div");
+      card.className = "pcard";
+      card.innerHTML = `
+        <div class="pthumb"><img src="pictures/${encodeURI(name)}" alt="${escapeHtml(name)}" loading="lazy"></div>
+        <div class="pname">${escapeHtml(name)}</div>`;
+      grid.appendChild(card);
+    });
+    if (count) count.textContent = `그림 ${files.length}장`;
+  } catch(err){
+    grid.innerHTML = `<div class="picture-empty">그림 목록을 불러오지 못했습니다.<br>pictures/manifest.json 파일이 있는지 확인해주세요.</div>`;
+    if (count) count.textContent = "그림 -장";
+    console.error(err);
+  } finally {
+    endLoad();
+  }
+}
+const pictureRefreshBtn = document.getElementById("picture-refresh");
+if (pictureRefreshBtn) pictureRefreshBtn.onclick = loadPictures;
+
+/* ---------------- 인터넷 창: 위키 페이지 (기덕이 소개 & 세계관) ---------------- */
+function buildWikiHTML(){
+  return `
+    <div class="wiki-page">
+      <div class="wiki-header">
+        <div class="wiki-logo">덩기덕 위키</div>
+        <div class="wiki-searchbar">검색: <input type="text" disabled placeholder="검색 기능 준비중"></div>
+      </div>
+      <div class="wiki-body">
+        <aside class="wiki-toc">
+          <div class="wiki-toc-title">목차</div>
+          <a href="#wiki-intro">1. 소개</a>
+          <a href="#wiki-world">2. 세계관</a>
+          <a href="#wiki-etc">3. 기타</a>
+        </aside>
+        <article class="wiki-article">
+          <h1>기덕이 (404 DUCK)</h1>
+          <p class="wiki-summary">이 페이지는 <b>기덕이</b>의 소개와 세계관을 정리해두는 위키입니다. 아래 내용을 자유롭게 채워주세요.</p>
+          <h2 id="wiki-intro">1. 소개</h2>
+          <p class="wiki-placeholder">[여기에 기덕이 소개를 적어주세요. 예: 이름, 종족, 성격, 말투 등]</p>
+          <h2 id="wiki-world">2. 세계관</h2>
+          <p class="wiki-placeholder">[여기에 세계관 설정을 적어주세요. 예: 사는 곳, 배경 이야기, 설정 등]</p>
+          <h2 id="wiki-etc">3. 기타</h2>
+          <p class="wiki-placeholder">[추가로 적고 싶은 내용이 있다면 여기에 적어주세요.]</p>
+        </article>
+      </div>
+    </div>`;
+}
+
+function showWikiPage(){
+  const page = document.querySelector("#win-inet .inet-page, #win-inet .wiki-page");
+  const container = document.querySelector("#win-inet .inet-content");
+  const addr = document.querySelector("#win-inet .inet-addr");
+  if (!container) return;
+  container.innerHTML = buildWikiHTML();
+  if (addr) addr.textContent = "http://www.404duck.co.kr/wiki/기덕이";
+}
+
+function showInetHomeCached(){
+  const container = document.querySelector("#win-inet .inet-content");
+  const addr = document.querySelector("#win-inet .inet-addr");
+  if (!container) return;
+  if (inetHomeHTML === null){ renderInetHome(); return; }
+  container.innerHTML = `<div class="inet-page">${inetHomeHTML}</div>`;
+  if (addr) addr.textContent = "http://www.404duck.co.kr/";
+}
+
+function setupInetNavigation(){
+  const container = document.querySelector("#win-inet .inet-content");
+  if (container){
+    container.addEventListener("click", (e)=>{
+      const wikiLink = e.target.closest("#goto-wiki");
+      if (wikiLink){ e.preventDefault(); showWikiPage(); }
+    });
+  }
+  const backBtn = document.getElementById("inet-back");
+  if (backBtn) backBtn.onclick = showInetHomeCached;
 }
 
 function escapeHtml(s){
@@ -556,7 +656,7 @@ function makeWindowInteractive(win){
 }
 
 function setupDragAndResize(){
-  ["open-schedule","open-archive","open-mine","open-inet","icon-chzzk","icon-cafe","icon-x","icon-youtube"].forEach(id=>{
+  ["open-schedule","open-archive","open-mine","open-inet","open-pictures","icon-chzzk","icon-cafe","icon-x","icon-youtube","icon-youtube-archive"].forEach(id=>{
     makeIconDraggable(document.getElementById(id));
   });
   // 링크 아이콘은 드래그 직후엔 새 탭 이동을 막음
@@ -567,6 +667,7 @@ function setupDragAndResize(){
   makeWindowInteractive(document.getElementById("win-archive"));
   makeWindowInteractive(document.getElementById("win-mine"));
   makeWindowInteractive(document.getElementById("win-inet"));
+  makeWindowInteractive(document.getElementById("win-pictures"));
   makeToastDraggable(document.getElementById("err-toast"));
 }
 
@@ -999,4 +1100,6 @@ function setupDesktopContextMenu(){
   setupMinesweeper();
   setupCrackEasterEgg();
   setupDesktopContextMenu();
+  setupInetNavigation();
+  loadPictures();
 })();
