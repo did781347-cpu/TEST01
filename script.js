@@ -22,6 +22,11 @@ const CONFIG = {
    [스케줄 탭]  A:date(YYYY-MM-DD)  B:title  C:tag(yellow/blue/red/green/gray 또는 #ffaa00 같은 컬러 코드)
    [게임 탭]    A:title  B:rating(1~5)  C:note  D:tag(옵션)
    [메모 탭]    A: 첫 행은 아무 헤더(예: item), 2행부터 한 줄에 할일 하나씩
+
+   그림(팬아트) 목록은 시트가 아니라 GitHub Actions로 자동 관리됩니다.
+   pictures 폴더에 이미지를 넣고 git에 push하면, 워크플로우(.github/workflows/
+   update-pictures-manifest.yml)가 자동으로 pictures/manifest.json을 새로 만들어
+   커밋해줍니다 — 그림 창은 그 manifest.json을 읽어서 표시합니다.
 */
 
 function csvUrl(sheetName){
@@ -93,7 +98,7 @@ function showWindow(id){
 document.getElementById("open-schedule").onclick = () => { if (justDragged) return; showWindow("win-schedule"); };
 document.getElementById("open-archive").onclick = () => { if (justDragged) return; showWindow("win-archive"); };
 document.getElementById("open-mine").onclick = () => { if (justDragged) return; showWindow("win-mine"); };
-document.getElementById("open-inet").onclick = () => { if (justDragged) return; renderInetHome(); showWindow("win-inet"); };
+document.getElementById("open-inet").onclick = () => { if (justDragged) return; showWikiPage(); showWindow("win-inet"); };
 document.getElementById("open-pictures").onclick = () => { if (justDragged) return; loadPictures(); showWindow("win-pictures"); };
 document.getElementById("goto-archive").onclick = () => showWindow("win-archive");
 document.getElementById("goto-schedule").onclick = () => showWindow("win-schedule");
@@ -300,11 +305,11 @@ async function loadGames(){
   }
 }
 
-/* ---------------- 그림 창 (pictures/manifest.json 목록을 읽어와 표시) ----------------
+/* ---------------- 그림 창 (구글 시트 "그림" 탭을 읽어와 표시) ----------------
    그림을 추가하려면:
-   1) 이미지 파일을 pictures 폴더 안에 넣고
-   2) pictures 폴더의 update-pictures.bat 를 더블클릭해서 manifest.json을 새로 만들면
-   그림 창에 자동으로 나타납니다. */
+   1) 이미지 파일을 git의 pictures 폴더에 올리고 (push)
+   2) 구글 시트 "그림" 탭에 그 파일명을 한 줄 추가하면
+   그림 창에 자동으로 나타납니다. (다른 탭들과 동일한 방식) */
 async function loadPictures(){
   const grid = document.getElementById("picture-grid");
   const count = document.getElementById("picture-count");
@@ -316,7 +321,7 @@ async function loadPictures(){
     const files = await res.json();
     grid.innerHTML = "";
     if (!Array.isArray(files) || files.length === 0){
-      grid.innerHTML = `<div class="picture-empty">아직 등록된 그림이 없습니다.<br>pictures 폴더에 이미지를 넣고 update-pictures.bat를 실행해주세요.</div>`;
+      grid.innerHTML = `<div class="picture-empty">아직 등록된 그림이 없습니다.<br>pictures 폴더에 이미지를 넣고 git에 올려주세요 (push하면 자동 반영됩니다).</div>`;
       if (count) count.textContent = "그림 0장";
       return;
     }
@@ -369,8 +374,14 @@ function buildWikiHTML(){
     </div>`;
 }
 
+function cacheInetHomeIfNeeded(){
+  if (inetHomeHTML !== null) return;
+  const page = document.querySelector("#win-inet .inet-page");
+  if (page) inetHomeHTML = page.innerHTML; // 최초 1회만 원본(바로가기 목록 페이지) 캐시
+}
+
 function showWikiPage(){
-  const page = document.querySelector("#win-inet .inet-page, #win-inet .wiki-page");
+  cacheInetHomeIfNeeded(); // 위키가 기본 페이지이므로, 바로가기 목록 원본을 먼저 저장해둠
   const container = document.querySelector("#win-inet .inet-content");
   const addr = document.querySelector("#win-inet .inet-addr");
   if (!container) return;
